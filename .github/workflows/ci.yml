@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: true
+
+      - name: gofmt
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; echo '::error::请先运行 gofmt -w .'; exit 1; }
+
+      - run: go vet ./...
+      - run: go test ./... -v
+
+      # 换 modernc.org/sqlite（纯 Go）的唯一理由就是这个：不装 C 工具链也能出各平台二进制
+      - name: 交叉编译（CGO_ENABLED=0）
+        run: |
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
+            CGO_ENABLED=0 GOOS=${target%/*} GOARCH=${target#*/} go build -o /dev/null ./cmd/cloud-ip-crawler \
+              && echo "  ok  $target" || { echo "  FAIL $target"; exit 1; }
+          done
