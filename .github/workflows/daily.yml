@@ -1,6 +1,6 @@
 name: Daily dataset
 
-# 每天重抓一次八家云厂商的公开 IP 段，把成品数据库发到 dataset-latest 这个滚动 Release，
+# 每天重抓一次各云厂商 / 机房 / 托管商的 IP 段，把成品数据库发到 dataset-latest 这个滚动 Release，
 # 让不想自己跑的人可以直接 curl 下载。
 on:
   schedule:
@@ -47,8 +47,8 @@ jobs:
           # 空库或明显缩水都视为上游异常，不发布
           rows=$(sqlite3 cloud-ip.db "SELECT COUNT(*) FROM cloud_ip_ranges;")
           echo "总计 $rows 条"
-          if [ "$rows" -lt 40000 ]; then
-            echo "::error::只有 $rows 条，远低于常态（约 6 万），疑似上游数据异常，中止发布"
+          if [ "$rows" -lt 80000 ]; then
+            echo "::error::只有 $rows 条，远低于常态（约 11.5 万），疑似上游数据异常，中止发布"
             exit 1
           fi
 
@@ -60,7 +60,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          notes="八家云厂商公开 IP 段，构建于 $(date -u '+%Y-%m-%d %H:%M UTC')。仅 IPv4。"
+          notes="主流云厂商、大机房和两千多家托管商的 IP 段，构建于 $(date -u '+%Y-%m-%d %H:%M UTC')。仅 IPv4。"
           if gh release view dataset-latest >/dev/null 2>&1; then
             gh release edit dataset-latest --notes "$notes"
             gh release upload dataset-latest cloud-ip.db.gz cloud-ip.csv.gz SHA256SUMS --clobber
