@@ -3,7 +3,6 @@ package crawler
 import (
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"time"
 )
 
@@ -29,20 +28,13 @@ func (c *OracleCrawler) Name() string {
 }
 
 func (c *OracleCrawler) Crawl() ([]Range, error) {
-	client := &http.Client{Timeout: 30 * time.Second}
-
-	resp, err := client.Get(oracleURL)
+	body, err := fetchBytes(oracleURL, 30*time.Second)
 	if err != nil {
-		return nil, fmt.Errorf("请求失败: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("HTTP 状态码: %d", resp.StatusCode)
+		return nil, err
 	}
 
 	var data OracleResponse
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+	if err := json.Unmarshal(body, &data); err != nil {
 		return nil, fmt.Errorf("解析 JSON 失败: %w", err)
 	}
 

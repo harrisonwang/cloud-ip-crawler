@@ -2,8 +2,8 @@ package crawler
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
-	"net/http"
 	"strings"
 	"time"
 )
@@ -41,20 +41,13 @@ func (c *CloudflareCrawler) Crawl() ([]Range, error) {
 }
 
 func (c *CloudflareCrawler) fetchTextList(url string) ([]Range, error) {
-	client := &http.Client{Timeout: 30 * time.Second}
-
-	resp, err := client.Get(url)
+	body, err := fetchBytes(url, 30*time.Second)
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("HTTP 状态码: %d", resp.StatusCode)
-	}
 
 	var ranges []Range
-	scanner := bufio.NewScanner(resp.Body)
+	scanner := bufio.NewScanner(bytes.NewReader(body))
 
 	for scanner.Scan() {
 		cidr := strings.TrimSpace(scanner.Text())

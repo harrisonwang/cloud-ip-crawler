@@ -2,8 +2,8 @@ package crawler
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
-	"net/http"
 	"strings"
 	"time"
 )
@@ -18,26 +18,13 @@ func (c *LinodeCrawler) Name() string {
 }
 
 func (c *LinodeCrawler) Crawl() ([]Range, error) {
-	client := &http.Client{Timeout: 30 * time.Second}
-
-	req, err := http.NewRequest("GET", linodeURL, nil)
+	body, err := fetchBytes(linodeURL, 30*time.Second)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", userAgent())
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("请求失败: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("HTTP 状态码: %d", resp.StatusCode)
-	}
 
 	var ranges []Range
-	scanner := bufio.NewScanner(resp.Body)
+	scanner := bufio.NewScanner(bytes.NewReader(body))
 
 	// Geofeed CSV 格式: ip_prefix,country_code,region_code,city,postal_code
 	// 例如: 45.33.32.0/24,US,US-CA,Fremont,

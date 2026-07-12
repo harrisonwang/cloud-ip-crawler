@@ -2,8 +2,8 @@ package crawler
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
-	"net/http"
 	"strings"
 	"time"
 )
@@ -18,20 +18,13 @@ func (c *DigitalOceanCrawler) Name() string {
 }
 
 func (c *DigitalOceanCrawler) Crawl() ([]Range, error) {
-	client := &http.Client{Timeout: 30 * time.Second}
-
-	resp, err := client.Get(digitaloceanURL)
+	body, err := fetchBytes(digitaloceanURL, 30*time.Second)
 	if err != nil {
-		return nil, fmt.Errorf("请求失败: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("HTTP 状态码: %d", resp.StatusCode)
+		return nil, err
 	}
 
 	var ranges []Range
-	scanner := bufio.NewScanner(resp.Body)
+	scanner := bufio.NewScanner(bytes.NewReader(body))
 
 	// CSV 格式: ip_range,country_code,region,city,postal_code
 	// 例如: 104.131.0.0/18,US,NJ,North Bergen,07047
