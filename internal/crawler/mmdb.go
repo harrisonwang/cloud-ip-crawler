@@ -45,10 +45,9 @@ func tierRank(tier string) int {
 	}
 }
 
-// ExportMMDB 把 SQLite 里的 IPv4 数据导出成 MaxMind DB 格式，nginx（geoip2 模块）、
-// HAProxy 等可以直接加载。返回写入的网段数。
-// 树建成 IPv6 的（v4 走 ::ffff:0:0/96 映射），这是 GeoLite2 的标准做法，
-// 以后加 IPv6 数据不用换格式。
+// ExportMMDB 把 SQLite 里的数据（v4 + v6）导出成 MaxMind DB 格式，
+// nginx（geoip2 模块）、HAProxy 等可以直接加载。返回写入的网段数。
+// 树是 IPv6 的（v4 走 ::ffff:0:0/96 映射），这是 GeoLite2 的标准做法。
 func ExportMMDB(db *sql.DB, w io.Writer) (int, error) {
 	tree, err := mmdbwriter.New(mmdbwriter.Options{
 		DatabaseType: "cloud-ip-crawler",
@@ -62,7 +61,7 @@ func ExportMMDB(db *sql.DB, w io.Writer) (int, error) {
 		return 0, fmt.Errorf("初始化 MMDB 树失败: %w", err)
 	}
 
-	rows, err := db.Query("SELECT provider, cidr, region, service FROM cloud_ip_ranges WHERE ip_version = 4")
+	rows, err := db.Query("SELECT provider, cidr, region, service FROM cloud_ip_ranges")
 	if err != nil {
 		return 0, fmt.Errorf("查询失败: %w", err)
 	}
@@ -96,7 +95,7 @@ func ExportMMDB(db *sql.DB, w io.Writer) (int, error) {
 	for _, r := range records {
 		// 新抓的数据在入库时就滤掉了特殊用途网段，这里再拦一道是给老库兜底：
 		// mmdbwriter 会直接拒绝保留网段（Vultr geofeed 里的 TEST-NET 踩过）
-		if isReservedV4CIDR(r.cidr) {
+		if isReservedCIDR(r.cidr) {
 			continue
 		}
 		_, network, err := net.ParseCIDR(r.cidr)

@@ -1,8 +1,6 @@
-// cloud-ip-crawler 抓取主流云厂商公开发布的 IP 段，汇总成一个 SQLite 数据库，
-// 用来回答「这个 IP 是不是机房 IP」。
-//
-// 只收录 IPv4：各家的 IPv6 数据源格式不统一（AWS 的 v6 在独立的 ipv6_prefixes 键里，
-// 多数厂商的解析器根本没读 v6 字段），放开会得到各家覆盖不一致的结果。见 README 的「后续计划」。
+// cloud-ip-crawler 抓取云厂商 / 机房 / 托管商的 IP 段（IPv4 + IPv6），
+// 汇总成一个 SQLite 数据库，用来回答「这个 IP 是不是机房 IP」。
+// 各家 v6 覆盖不齐（Oracle 的官方文件就没有 v6），按厂商粒度记录在 README。
 package main
 
 import (

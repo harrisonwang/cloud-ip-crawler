@@ -47,8 +47,8 @@ jobs:
           # 空库或明显缩水都视为上游异常，不发布
           rows=$(sqlite3 cloud-ip.db "SELECT COUNT(*) FROM cloud_ip_ranges;")
           echo "总计 $rows 条"
-          if [ "$rows" -lt 80000 ]; then
-            echo "::error::只有 $rows 条，远低于常态（约 11.5 万），疑似上游数据异常，中止发布"
+          if [ "$rows" -lt 110000 ]; then
+            echo "::error::只有 $rows 条，远低于常态（约 15.5 万），疑似上游数据异常，中止发布"
             exit 1
           fi
 
@@ -63,7 +63,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          notes="主流云厂商、大机房和两千多家托管商的 IP 段，构建于 $(date -u '+%Y-%m-%d %H:%M UTC')。仅 IPv4。"
+          notes="主流云厂商、大机房和两千多家托管商的 IP 段（IPv4 + IPv6），构建于 $(date -u '+%Y-%m-%d %H:%M UTC')。"
           if gh release view dataset-latest >/dev/null 2>&1; then
             gh release edit dataset-latest --notes "$notes"
             gh release upload dataset-latest cloud-ip.db.gz cloud-ip.csv.gz cloud-ip.mmdb.gz SHA256SUMS --clobber

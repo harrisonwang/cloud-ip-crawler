@@ -30,11 +30,13 @@ func TestExportMMDB(t *testing.T) {
 		}
 		return *r
 	}
-	// hosting 的 /21 与 aws 官方的 /22 重叠：/22 内 aws 赢，/21 其余部分归 hosting
+	// hosting 的 /21 与 aws 官方的 /22 重叠：/22 内 aws 赢，/21 其余部分归 hosting；
+	// cloudflare 的 v6 段验证 v6 也能进 MMDB
 	seed := map[string][]Range{
-		"hosting": {mustRange("hosting", "52.94.72.0/21", "US", "AS16509 AMAZON-02")},
-		"aws":     {mustRange("aws", "52.94.76.0/22", "us-west-2", "AMAZON")},
-		"hetzner": {mustRange("hetzner", "5.9.0.0/16", "DE", "AS24940")},
+		"hosting":    {mustRange("hosting", "52.94.72.0/21", "US", "AS16509 AMAZON-02")},
+		"aws":        {mustRange("aws", "52.94.76.0/22", "us-west-2", "AMAZON")},
+		"hetzner":    {mustRange("hetzner", "5.9.0.0/16", "DE", "AS24940")},
+		"cloudflare": {mustRange("cloudflare", "2606:4700::/32", "", "cdn")},
 	}
 	for provider, ranges := range seed {
 		if _, err := InsertRanges(db, provider, ranges); err != nil {
@@ -42,14 +44,16 @@ func TestExportMMDB(t *testing.T) {
 		}
 	}
 	// 老库里可能残留保留网段（新代码入库时已滤掉，这里绕过 createRange 直插模拟），
-	// 导出必须静默跳过而不是整体失败
-	start, end, _, err := parseCIDR("192.0.2.0/24")
-	if err != nil {
-		t.Fatalf("parseCIDR: %v", err)
-	}
-	legacy := Range{Provider: "vultr", CIDR: "192.0.2.0/24", IPStart: start, IPEnd: end, IPVersion: 4}
-	if _, err := InsertRanges(db, "vultr", []Range{legacy}); err != nil {
-		t.Fatalf("入库 legacy 行失败: %v", err)
+	// v4 / v6 都必须被导出静默跳过而不是整体失败
+	for _, legacyCIDR := range []string{"192.0.2.0/24", "fdab::/48"} {
+		start, end, version, err := parseCIDR(legacyCIDR)
+		if err != nil {
+			t.Fatalf("parseCIDR: %v", err)
+		}
+		legacy := Range{Provider: "vultr", CIDR: legacyCIDR, IPStart: start, IPEnd: end, IPVersion: version}
+		if _, err := InsertRanges(db, "vultr", []Range{legacy}); err != nil {
+			t.Fatalf("入库 legacy 行失败: %v", err)
+		}
 	}
 
 	out := filepath.Join(t.TempDir(), "test.mmdb")
@@ -62,8 +66,8 @@ func TestExportMMDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("导出失败: %v", err)
 	}
-	if n != 3 {
-		t.Errorf("应写入 3 个网段，实际 %d", n)
+	if n != 4 {
+		t.Errorf("应写入 4 个网段（2 条 legacy 保留段被跳过），实际 %d", n)
 	}
 
 	reader, err := maxminddb.Open(out)
@@ -102,8 +106,15 @@ func TestExportMMDB(t *testing.T) {
 	if rec, ok := lookup("5.9.0.1"); !ok || rec.Provider != "hetzner" || rec.Tier != "asn" || rec.Service != "AS24940" {
 		t.Errorf("5.9.0.1 应归 hetzner/asn，实际: %+v (found=%v)", rec, ok)
 	}
-	// 库外地址不该命中
+	// IPv6 原生查询
+	if rec, ok := lookup("2606:4700::1111"); !ok || rec.Provider != "cloudflare" || rec.Tier != "official" {
+		t.Errorf("2606:4700::1111 应归 cloudflare/official，实际: %+v (found=%v)", rec, ok)
+	}
+	// 库外地址不该命中（v4、v6 各一个；fdab:: 是被跳过的 legacy 保留段）
 	if rec, ok := lookup("9.9.9.9"); ok {
 		t.Errorf("9.9.9.9 不应命中，实际: %+v", rec)
+	}
+	if rec, ok := lookup("fdab::1"); ok {
+		t.Errorf("fdab::1 不应命中，实际: %+v", rec)
 	}
 }

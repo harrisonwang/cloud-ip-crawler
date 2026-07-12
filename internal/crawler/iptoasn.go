@@ -16,9 +16,12 @@ import (
 )
 
 // 所有 ASN 系数据（命名厂商 + hosting 分类）共用 iptoasn.com 的全量 BGP 表：
-// 一个 6.8MB 的文件覆盖全球所有 ASN 的宣告前缀，比逐 ASN 打在线接口（RIPEstat）
-// 便宜得多——加一家厂商的边际成本是零次请求。文件每日更新，源头是 RouteViews。
-const iptoasnV4URL = "https://iptoasn.com/data/ip2asn-v4.tsv.gz"
+// v4 一个文件、v6 一个文件，覆盖全球所有 ASN 的宣告前缀，比逐 ASN 打在线接口
+// （RIPEstat）便宜得多——加一家厂商的边际成本是零次请求。每日更新，源头是 RouteViews。
+const (
+	iptoasnV4URL = "https://iptoasn.com/data/ip2asn-v4.tsv.gz"
+	iptoasnV6URL = "https://iptoasn.com/data/ip2asn-v6.tsv.gz"
+)
 
 // asnDataset 一次下载、单遍扫描后按用途分好的成品，全体 ASN 系爬虫共享
 type asnDataset struct {
@@ -41,22 +44,34 @@ func loadASNDataset() *asnDataset {
 }
 
 func buildASNDataset() asnDataset {
-	body, err := fetchBytes(iptoasnV4URL, 60*time.Second)
+	merged := asnDataset{byProvider: map[string][]Range{}}
+	// v4、v6 各一个文件，格式相同；任一失败整体判失败（宁缺毋滥）
+	for _, url := range []string{iptoasnV4URL, iptoasnV6URL} {
+		ds, err := fetchAndParseIPToASN(url)
+		if err != nil {
+			return asnDataset{err: err}
+		}
+		for name, rs := range ds.byProvider {
+			merged.byProvider[name] = append(merged.byProvider[name], rs...)
+		}
+		merged.hosting = append(merged.hosting, ds.hosting...)
+	}
+	return merged
+}
+
+func fetchAndParseIPToASN(url string) (asnDataset, error) {
+	body, err := fetchBytes(url, 60*time.Second)
 	if err != nil {
-		return asnDataset{err: fmt.Errorf("下载 iptoasn 全量表失败: %w", err)}
+		return asnDataset{}, fmt.Errorf("下载 iptoasn 全量表失败: %w", err)
 	}
 
 	gz, err := gzip.NewReader(bytes.NewReader(body))
 	if err != nil {
-		return asnDataset{err: fmt.Errorf("解压失败: %w", err)}
+		return asnDataset{}, fmt.Errorf("解压失败: %w", err)
 	}
 	defer gz.Close()
 
-	ds, err := parseIPToASN(gz)
-	if err != nil {
-		return asnDataset{err: err}
-	}
-	return ds
+	return parseIPToASN(gz)
 }
 
 // parseIPToASN 单遍扫描 TSV（range_start \t range_end \t AS 号 \t 国家码 \t AS 描述），
@@ -122,30 +137,64 @@ func parseIPToASN(r io.Reader) (asnDataset, error) {
 	return ds, nil
 }
 
-// rangeToCIDRs 把 [start, end] 闭区间拆成最少的一组 CIDR。仅处理 IPv4（v6 表是另一个文件，
-// 见 README 后续计划）。全程 uint64 运算避免 2^32 溢出。
+// rangeToCIDRs 把 [start, end] 闭区间拆成最少的一组 CIDR，v4 / v6 通用。
+// v6 是 128 位，超出原生整型，直接在大端字节序的地址字节上做位运算。
 func rangeToCIDRs(start, end netip.Addr) []string {
-	if !start.Is4() || !end.Is4() {
+	if start.Is4() != end.Is4() || start.Compare(end) > 0 {
 		return nil
 	}
-	s4, e4 := start.As4(), end.As4()
-	s := uint64(s4[0])<<24 | uint64(s4[1])<<16 | uint64(s4[2])<<8 | uint64(s4[3])
-	e := uint64(e4[0])<<24 | uint64(e4[1])<<16 | uint64(e4[2])<<8 | uint64(e4[3])
+	totalBits := 32
+	if !start.Is4() {
+		totalBits = 128
+	}
 
 	var out []string
-	for s <= e {
-		size := s & (^s + 1) // 从 s 开始能对齐的最大块
-		if size == 0 {       // s == 0 时低位技巧失效，最大块是整个 v4 空间
-			size = 1 << 32
+	cur := start
+	for {
+		// 从 cur 起能对齐的最大块：块大小 2^tz，前缀长 totalBits-tz
+		prefixLen := totalBits - addrTrailingZeros(cur)
+		// 收缩到不超过区间尾
+		for prefixLast(cur, prefixLen).Compare(end) > 0 {
+			prefixLen++
 		}
-		for s+size-1 > e { // 收缩到不超过区间尾
-			size >>= 1
+		out = append(out, netip.PrefixFrom(cur, prefixLen).String())
+
+		last := prefixLast(cur, prefixLen)
+		if last.Compare(end) >= 0 {
+			return out
 		}
-		prefixLen := 32 - (bits.Len64(size) - 1)
-		out = append(out, fmt.Sprintf("%d.%d.%d.%d/%d", byte(s>>24), byte(s>>16), byte(s>>8), byte(s), prefixLen))
-		s += size
+		cur = last.Next()
 	}
-	return out
+}
+
+// addrTrailingZeros 地址二进制表示的末尾连续 0 个数（全零地址返回位宽）
+func addrTrailingZeros(a netip.Addr) int {
+	b := a.AsSlice()
+	tz := 0
+	for i := len(b) - 1; i >= 0; i-- {
+		if b[i] != 0 {
+			return tz + bits.TrailingZeros8(b[i])
+		}
+		tz += 8
+	}
+	return tz
+}
+
+// prefixLast 返回「以 a 开头、长度 prefixLen 的前缀」覆盖的最后一个地址
+func prefixLast(a netip.Addr, prefixLen int) netip.Addr {
+	b := a.AsSlice()
+	host := len(b)*8 - prefixLen
+	for i := len(b) - 1; i >= 0 && host > 0; i-- {
+		if host >= 8 {
+			b[i] = 0xff
+			host -= 8
+		} else {
+			b[i] |= byte(1<<host) - 1
+			host = 0
+		}
+	}
+	addr, _ := netip.AddrFromSlice(b)
+	return addr
 }
 
 // ---- hosting 启发式分类 ----

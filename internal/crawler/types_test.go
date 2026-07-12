@@ -31,25 +31,35 @@ func TestParseCIDR(t *testing.T) {
 	}
 }
 
-// 八个爬虫都经 createRange 收口，IPv6 必须在此被一致地跳过：
-// 各家数据源的 v6 覆盖不齐（AWS 的 v6 在独立的 ipv6_prefixes 键里，多数解析器根本没读），
-// 放行会得到各厂商覆盖不一致的库。
-func TestCreateRangeSkipsIPv6(t *testing.T) {
-	if _, err := createRange("cloudflare", "2606:4700::/32", "", "cdn"); !errors.Is(err, errSkipIPv6) {
-		t.Errorf("IPv6 CIDR 应返回 errSkipIPv6，实际: %v", err)
-	}
-	// Vultr 的 geofeed 真把 TEST-NET 当数据发过，特殊用途网段必须在入库前被丢弃
-	for _, cidr := range []string{"192.0.2.0/24", "198.51.100.0/24", "10.0.0.0/8", "192.0.2.128/25"} {
-		if _, err := createRange("vultr", cidr, "", ""); !errors.Is(err, errSkipReserved) {
-			t.Errorf("保留网段 %s 应返回 errSkipReserved，实际: %v", cidr, err)
-		}
-	}
+// 全部爬虫都经 createRange 收口：v4/v6 正常放行，特殊用途网段统一丢弃
+func TestCreateRange(t *testing.T) {
 	r, err := createRange("aws", "52.94.76.0/22", "us-east-1", "EC2")
 	if err != nil {
 		t.Fatalf("IPv4 CIDR 不应报错: %v", err)
 	}
 	if r.IPVersion != 4 || r.Provider != "aws" || r.Region != "us-east-1" {
 		t.Errorf("字段未正确填充: %+v", r)
+	}
+
+	r6, err := createRange("cloudflare", "2606:4700::/32", "", "cdn")
+	if err != nil {
+		t.Fatalf("IPv6 CIDR 不应报错: %v", err)
+	}
+	if r6.IPVersion != 6 || len(ipToBytes(r6.IPStart)) != 16 || len(ipToBytes(r6.IPEnd)) != 16 {
+		t.Errorf("IPv6 字段未正确填充: %+v", r6)
+	}
+
+	// Vultr 的 geofeed 真把 TEST-NET 当数据发过，特殊用途网段必须在入库前被丢弃。
+	// v6 同理：ULA、文档段、v4 映射段、6to4 / Teredo（mmdbwriter 会拒收）都不能入库。
+	reserved := []string{
+		"192.0.2.0/24", "198.51.100.0/24", "10.0.0.0/8", "192.0.2.128/25",
+		"2001:db8::/32", "fc00::/7", "fd12:3456::/48", "fe80::/10",
+		"::ffff:1.2.3.0/120", "2002::/16", "2001::/32", "2001:2::/48",
+	}
+	for _, cidr := range reserved {
+		if _, err := createRange("vultr", cidr, "", ""); !errors.Is(err, errSkipReserved) {
+			t.Errorf("保留网段 %s 应返回 errSkipReserved，实际: %v", cidr, err)
+		}
 	}
 }
 

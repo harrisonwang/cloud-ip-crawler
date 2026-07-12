@@ -30,36 +30,56 @@ type Crawler interface {
 	Crawl() ([]Range, error)
 }
 
-// errSkipIPv6 是预期的跳过，不是抓取错误。调用方一律 continue。
-var errSkipIPv6 = fmt.Errorf("skip IPv6")
-
-// errSkipReserved 同上：特殊用途网段的预期跳过
+// errSkipReserved 是预期的跳过，不是抓取错误。调用方一律 continue。
 var errSkipReserved = fmt.Errorf("skip reserved network")
 
-// reservedV4 IPv4 特殊用途网段（RFC 6890 等）：私网、TEST-NET、组播、保留……
-// 上游数据偶尔混进这类垃圾——Vultr 的 geofeed 就把三个 TEST-NET 当数据发出来。
-// 公共数据集不该声称它们属于任何厂商，入库前统一丢弃；MMDB 导出也会拒绝它们。
-var reservedV4 = func() []netip.Prefix {
-	cidrs := []string{
-		"0.0.0.0/8", "10.0.0.0/8", "100.64.0.0/10", "127.0.0.0/8",
-		"169.254.0.0/16", "172.16.0.0/12", "192.0.0.0/24", "192.0.2.0/24",
-		"192.88.99.0/24", "192.168.0.0/16", "198.18.0.0/15", "198.51.100.0/24",
-		"203.0.113.0/24", "224.0.0.0/4", "240.0.0.0/4",
-	}
+// mustPrefixes 把 CIDR 字符串列表解析成 netip.Prefix 列表
+func mustPrefixes(cidrs []string) []netip.Prefix {
 	ps := make([]netip.Prefix, len(cidrs))
 	for i, c := range cidrs {
 		ps[i] = netip.MustParsePrefix(c)
 	}
 	return ps
-}()
+}
 
-// isReservedV4CIDR 判断一个 CIDR 是否整段落在特殊用途网段里
-func isReservedV4CIDR(cidr string) bool {
+// reservedV4 / reservedV6 特殊用途网段（RFC 6890、IANA 特殊地址注册表）：
+// 私网、TEST-NET、组播、ULA、链路本地……上游数据偶尔混进这类垃圾——
+// Vultr 的 geofeed 就把三个 TEST-NET 当数据发出来。公共数据集不该声称
+// 它们属于任何厂商，入库前统一丢弃；mmdbwriter 也会直接拒绝其中一部分
+// （保留段和 6to4 / Teredo 这类在 v6 树里被别名的段），导出前必须滤干净。
+var reservedV4 = mustPrefixes([]string{
+	"0.0.0.0/8", "10.0.0.0/8", "100.64.0.0/10", "127.0.0.0/8",
+	"169.254.0.0/16", "172.16.0.0/12", "192.0.0.0/24", "192.0.2.0/24",
+	"192.88.99.0/24", "192.168.0.0/16", "198.18.0.0/15", "198.51.100.0/24",
+	"203.0.113.0/24", "224.0.0.0/4", "240.0.0.0/4",
+})
+
+var reservedV6 = mustPrefixes([]string{
+	"::/96",         // 未指定 + 旧式 IPv4 兼容（含 ::、::1 邻域之外的遗留段）
+	"::1/128",       // 环回
+	"::ffff:0:0/96", // IPv4 映射：v4 数据已单独收录，这里出现只会是重复或垃圾
+	"64:ff9b::/96",  // NAT64 公共前缀
+	"100::/64",      // 黑洞（discard-only）
+	"2001::/23",     // IETF 协议专用块：Teredo、基准测试(2001:2::)、ORCHID、AS112……
+	"2001:db8::/32", // 文档示例
+	"2002::/16",     // 6to4（同样被别名）
+	"3fff::/20",     // 文档示例（RFC 9637）
+	"fc00::/7",      // ULA
+	"fe80::/10",     // 链路本地
+	"ff00::/8",      // 组播
+})
+
+// isReservedCIDR 判断一个 CIDR 是否整段落在特殊用途网段里
+func isReservedCIDR(cidr string) bool {
 	p, err := netip.ParsePrefix(cidr)
-	if err != nil || !p.Addr().Is4() {
+	if err != nil {
 		return false
 	}
-	for _, res := range reservedV4 {
+	list := reservedV6
+	if p.Addr().Is4() {
+		list = reservedV4
+	}
+	for _, res := range list {
 		if res.Overlaps(p) && res.Bits() <= p.Bits() {
 			return true
 		}
@@ -67,16 +87,13 @@ func isReservedV4CIDR(cidr string) bool {
 	return false
 }
 
-// createRange 是全部八个爬虫写入前的唯一收口，IPv6 的取舍集中在这里
+// createRange 是全部爬虫写入前的唯一收口：v4/v6 都收，特殊用途网段在这里统一丢弃
 func createRange(provider, cidr, region, service string) (*Range, error) {
 	start, end, version, err := parseCIDR(cidr)
 	if err != nil {
 		return nil, err
 	}
-	if version == 6 {
-		return nil, errSkipIPv6
-	}
-	if isReservedV4CIDR(cidr) {
+	if isReservedCIDR(cidr) {
 		return nil, errSkipReserved
 	}
 	return &Range{

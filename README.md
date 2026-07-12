@@ -20,7 +20,7 @@ English: [README.en.md](README.en.md)
 
 第 2、3 层共用 [iptoasn.com](https://iptoasn.com/) 的全量 BGP 表（一个 6.8 MB 的文件，每日更新，源头是 RouteViews），一次下载覆盖全部，不用逐 ASN 打接口。
 
-纯 Go，不需要 CGO，一个二进制文件跑完就得到一个 16 MB 的 SQLite 数据库。
+纯 Go，不需要 CGO，一个二进制文件跑完就得到一个 25 MB 的 SQLite 数据库，IPv4、IPv6 都有。
 
 ## 快速开始
 
@@ -148,13 +148,33 @@ cloud-ip-crawler --providers=aws,gcp,azure,cloudflare,oracle,digitalocean,linode
 抓一次的量（2026 年 7 月实测）：
 
 ```
-hosting 48177 │ azure 43310 │ aws 7750 │ linode 5313 │ alibaba 1127
-oracle 1089 │ digitalocean 1078 │ gcp 991 │ ovh 846 │ tencent 827
-softlayer 733 │ leaseweb 636 │ bunny 623 │ zscaler 572 │ vultr 436
-gcore 344 │ contabo 250 │ netcup 129 │ hetzner 126 │ scaleway 84
-hosthatch 75 │ buyvm 25 │ fastly 19 │ cloudflare 15
-────────────────────────────────────────────────────
-共 114575 条，16 MB，全量抓一次约 30 秒
+                 v4     v6
+hosting       48200  21938
+azure         43310  16067
+aws            7750   2899
+linode         5313     98
+alibaba        1127    281
+digitalocean   1078    148
+leaseweb        636    555
+oracle         1089      0
+gcp             991     48
+bunny           623    355
+ovh             846     69
+tencent         827     85
+softlayer       733     72
+zscaler         572    105
+vultr           436     73
+gcore           437     53
+contabo         250      2
+netcup          129     12
+hetzner         126      7
+scaleway         84     27
+hosthatch        75     12
+buyvm            25     61
+cloudflare       15      7
+fastly           19      2
+──────────────────────────
+共 157667 条（其中 v6 42976），25 MB，全量抓一次约 25 秒
 ```
 
 Azure 的原始数据里有三万多条重复网段（同一个 CIDR 挂在好几个 service / region 标签下），入库时按 `(provider, cidr)` 去重，只留一条。Zscaler 也一样——同一个节点网段会在几十个城市、几个 cloud 下反复出现，抓到的 3282 条去重后只剩 572 条。ASN 路线的条数看起来比别处少（Hetzner 只有 126 条），是因为 iptoasn 把相邻的同 ASN 网段聚合过，覆盖的地址总量不变。
@@ -209,13 +229,13 @@ print(row)   # ('aws', '52.94.76.0/22')
 
 **查不到，不等于它不是机房 IP**，但概率已经不大了。剩下的漏网主要是：名字里不带行业词的小机房（用创始人名字命名的那种）、企业自建机房、以及躲在住宅代理后面的流量——最后这类本来就不该由 IP 段清单来解决。
 
-**只收 IPv4。** 各家的 IPv6 格式不统一——AWS 把 v6 单独放在 `ipv6_prefixes` 里，其余几家的解析代码压根没读 v6 字段。与其给一份各家覆盖不一致的数据，不如先不给。
+**v4、v6 都收。** 各家 v6 覆盖见上面的表，唯一的空缺是 Oracle——它的官方文件里就没有 v6。查询时按 `ip_version` 区分：v4 的 key 是 4 字节，v6 是 16 字节，`lookup` 子命令和 MMDB 对两者一视同仁。
 
 ## 后续计划
 
 欢迎 PR，尤其是前两项：
 
-- [ ] **支持 IPv6**：官方文件这边，给各家逐个核对 v6 字段后放开 `internal/crawler` 里 `createRange` 跳过 v6 的那一行（好几家的解析器其实已经在读 v6，只是被统一拦下）；ASN 这边，iptoasn 有现成的 `ip2asn-v6.tsv.gz`，再放开 `rangeToCIDRs` 的 v4 限制即可。
+- [x] ~~支持 IPv6~~：v4 / v6 都收，Oracle（官方文件没有 v6）是唯一的空缺。
 - [ ] **打磨 hosting 关键词**：误报 / 漏报清单欢迎提 issue，关键词和显式收录 / 排除清单都在 `iptoasn.go`，改一行的事。
 - [ ] **更多命名厂商**：往 `asn.go` 的清单里加一行就行（华为云、Kimsufi、RackNerd 等），核对 holder 后提 PR。
 - [x] ~~导出成 MMDB~~：`export` 子命令，每日 Release 里有现成的 `cloud-ip.mmdb.gz`。

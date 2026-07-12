@@ -43,7 +43,7 @@ func (c *FastlyCrawler) Crawl() ([]Range, error) {
 		ranges = append(ranges, *r)
 	}
 
-	// IPv6（会在 createRange 被统一跳过，见 types.go）
+	// IPv6
 	for _, cidr := range data.IPv6Addresses {
 		r, err := createRange("fastly", cidr, "", "cdn")
 		if err != nil {

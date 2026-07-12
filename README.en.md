@@ -19,7 +19,7 @@ Data comes in three tiers, highest confidence first:
 
 Tiers 2 and 3 share one download: the full BGP table from [iptoasn.com](https://iptoasn.com/) (a 6.8 MB file, updated daily, sourced from RouteViews) — no per-ASN API calls.
 
-Pure Go, no CGO, one binary, and you end up with a 16 MB SQLite file.
+Pure Go, no CGO, one binary, and you end up with a 25 MB SQLite file covering both IPv4 and IPv6.
 
 ## Quick start
 
@@ -133,7 +133,7 @@ The big clouds' backbone ASes carry no keyword (there's nothing in "AMAZON-02"),
 
 This tier is heuristic and lower-confidence than the other two: a few false positives (small ISPs with VPS/CLOUD in their names — 3 suspicious out of 2,452 ASNs measured), and false negatives (hosts named after their founder). Skip it by leaving `hosting` out of `--providers`.
 
-One full crawl, measured July 2026: **114,575 ranges, 16 MB, ~30 seconds.** Azure alone is 43,310 of them, and its source lists about 35k duplicate CIDRs — the same network tagged under several services and regions — deduplicated on `(provider, cidr)`. Zscaler is the same story: the same node range recurs across dozens of cities and several clouds, so its 3,282 fetched rows collapse to 572. ASN-route counts look small (Hetzner is just 126 rows) because iptoasn aggregates adjacent same-ASN ranges — the address coverage is unchanged.
+One full crawl, measured July 2026: **157,667 ranges (42,976 of them IPv6), 25 MB, ~25 seconds.** Azure alone is 59k of them, and its source lists tens of thousands of duplicate CIDRs — the same network tagged under several services and regions — deduplicated on `(provider, cidr)`. Zscaler is the same story: the same node range recurs across dozens of cities and several clouds. ASN-route counts look small (Hetzner is ~130 rows) because iptoasn aggregates adjacent same-ASN ranges — the address coverage is unchanged. IPv6 coverage varies by provider (see the table in the Chinese README for exact counts); the only complete gap is Oracle, whose official file ships no v6 at all.
 
 Upstream data can't be trusted blindly: Vultr's geofeed ships three RFC 5737 test networks (`192.0.2.0/24` and friends). Special-purpose ranges (private, TEST-NET, multicast, …) are dropped before they reach the database.
 
@@ -170,13 +170,13 @@ The famous misses of official lists are now caught: `1.1.1.1` (Cloudflare's publ
 
 **A miss still doesn't prove "not a datacenter"**, but the odds are now low. What remains uncovered: small hosts with no industry word in their AS name (the founder's-name kind), corporate on-prem datacenters, and traffic behind residential proxies — the last one was never solvable with range lists anyway.
 
-**IPv4 only.** The IPv6 sources aren't consistent — AWS keeps v6 under a separate `ipv6_prefixes` key, and most of the parsers here never read a v6 field at all. Shipping no v6 beats shipping v6 with uneven coverage.
+**Both IPv4 and IPv6.** The only complete gap is Oracle, whose official file has no v6. Filter by `ip_version` when querying: v4 keys are 4 bytes, v6 keys 16; the `lookup` subcommand and the MMDB handle both transparently.
 
 ## Roadmap
 
 PRs welcome, especially the first two:
 
-- [ ] **IPv6** — audit each official source's v6 fields and lift the skip in `createRange` (several parsers already read v6; it's centrally dropped). For the ASN route, iptoasn ships `ip2asn-v6.tsv.gz` ready to go — just lift the v4 restriction in `rangeToCIDRs`.
+- [x] ~~IPv6~~ — both v4 and v6 are collected; Oracle (no v6 in its official file) is the only gap.
 - [ ] **Tune the hosting keywords** — false positive/negative reports welcome as issues; the keywords and explicit include list live in `iptoasn.go`, one-line changes.
 - [ ] **More named hosts** — append a line in `asn.go` (Huawei Cloud, Kimsufi, RackNerd, …), verify the holder, send a PR.
 - [x] ~~MMDB export~~ — the `export` subcommand; the daily Release ships `cloud-ip.mmdb.gz`.

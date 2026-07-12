@@ -19,10 +19,17 @@ func TestRangeToCIDRs(t *testing.T) {
 		{"10.0.0.1", "10.0.0.2", []string{"10.0.0.1/32", "10.0.0.2/32"}},
 		{"1.0.0.0", "1.0.1.255", []string{"1.0.0.0/23"}},
 		{"1.0.0.0", "1.0.2.255", []string{"1.0.0.0/23", "1.0.2.0/24"}},
-		// 全空间（s==0 的低位技巧边界）
+		// 全空间（全零地址的对齐边界）
 		{"0.0.0.0", "255.255.255.255", []string{"0.0.0.0/0"}},
 		// start > end 是非法区间，应得到空
 		{"10.0.0.2", "10.0.0.1", nil},
+		// IPv6：对齐整段、单地址、不对齐拆段
+		{"2a01:4f8::", "2a01:4f8:ffff:ffff:ffff:ffff:ffff:ffff", []string{"2a01:4f8::/32"}},
+		{"2606:4700::1", "2606:4700::1", []string{"2606:4700::1/128"}},
+		{"2606:4700::1", "2606:4700::2", []string{"2606:4700::1/128", "2606:4700::2/128"}},
+		{"::", "ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff", []string{"::/0"}},
+		// v4 / v6 混用是非法输入
+		{"10.0.0.1", "2606:4700::1", nil},
 	}
 	for _, c := range cases {
 		got := rangeToCIDRs(netip.MustParseAddr(c.start), netip.MustParseAddr(c.end))
@@ -68,8 +75,9 @@ func TestIsHostingDesc(t *testing.T) {
 
 func TestParseIPToASN(t *testing.T) {
 	tsv := strings.Join([]string{
-		// 命名厂商（hetzner AS24940）
+		// 命名厂商（hetzner AS24940），v4 一行 + v6 一行（v6 表同格式）
 		"5.9.0.0\t5.9.255.255\t24940\tDE\tHETZNER-AS Hetzner Online GmbH",
+		"2a01:4f8::\t2a01:4f8:ffff:ffff:ffff:ffff:ffff:ffff\t24940\tDE\tHETZNER-AS Hetzner Online GmbH",
 		// 关键词命中 → hosting
 		"185.199.108.0\t185.199.108.255\t65001\tUS\tEXAMPLE-HOSTING Ltd",
 		// 显式清单命中（Cloudflare 骨干 AS）→ hosting
@@ -88,8 +96,14 @@ func TestParseIPToASN(t *testing.T) {
 	}
 
 	hz := ds.byProvider["hetzner"]
-	if len(hz) != 1 || hz[0].CIDR != "5.9.0.0/16" || hz[0].Service != "AS24940" || hz[0].Region != "DE" {
-		t.Errorf("hetzner 解析不对: %+v", hz)
+	if len(hz) != 2 {
+		t.Fatalf("hetzner 应有 v4+v6 各一条，实际: %+v", hz)
+	}
+	if hz[0].CIDR != "5.9.0.0/16" || hz[0].Service != "AS24940" || hz[0].Region != "DE" || hz[0].IPVersion != 4 {
+		t.Errorf("hetzner v4 解析不对: %+v", hz[0])
+	}
+	if hz[1].CIDR != "2a01:4f8::/32" || hz[1].IPVersion != 6 {
+		t.Errorf("hetzner v6 解析不对: %+v", hz[1])
 	}
 
 	if len(ds.hosting) != 2 {
