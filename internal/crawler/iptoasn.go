@@ -216,6 +216,9 @@ var hostingKeywordSubstrings = []string{
 	"DATACENT", // DATACENTER / DATACENTRE…
 	"DEDIC",    // DEDICATED / DEDIPATH…
 	"COLOC",    // COLOCATION / COLOCROSSING…
+	"HEBERG",   // 法语系托管商：PULSEHEBERG / OUIHEBERG…（全量表验证过无误报）
+	// 验证后否决的候选：SERVIDOR（葡语里也指公务员，命中了巴西公务员救助机构）、
+	// BAREMETAL 和整词 COLO（全量表里零命中，纯属摆设）
 }
 
 // hostingKeywordTokens 只做整词匹配的短词：IDC 当子串会误伤 MIDCONTINENT
@@ -235,9 +238,10 @@ var extraHostingASNs = map[int]bool{
 	13335:  true, // CLOUDFLARENET - Cloudflare, Inc.
 	31898:  true, // ORACLE-BMC-31898 - Oracle Corporation
 	14061:  true, // DIGITALOCEAN-ASN - DigitalOcean, LLC
-	63949:  true, // AKAMAI-LINODE-AP - Akamai Connected Cloud
 	20473:  true, // AS-VULTR - The Constant Company, LLC
 	54113:  true, // FASTLY - Fastly, Inc.
+	// AS63949（Akamai Connected Cloud，原 Linode 骨干）曾在这里，
+	// akamai 升为命名厂商后挪进了 asn.go 的清单
 }
 
 func isHostingDesc(desc string) bool {

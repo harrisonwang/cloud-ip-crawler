@@ -14,7 +14,7 @@ Telling a datacenter IP from a home broadband one is the first step in a lot of 
 Data comes in three tiers, highest confidence first:
 
 1. **Official files** (AWS, GCP, Azure, Cloudflare, Fastly, … 11 of them). The lists the providers publish themselves — most precise, but no two publish them the same way: AWS ships JSON, DigitalOcean ships CSV, Linode and Vultr ship [Geofeeds](https://www.rfc-editor.org/rfc/rfc8805.html), Bunny CDN just ships a list of individual IPs, and Azure hides its file behind a download page whose URL changes every week.
-2. **Named ASNs** (Hetzner, OVH, Contabo, Leaseweb, Alibaba Cloud, Tencent Cloud, … 12 of them). They publish no official list, so their currently-announced prefixes are taken from their ASNs.
+2. **Named ASNs** (Hetzner, OVH, Contabo, Akamai, Rackspace, Alibaba Cloud, Tencent Cloud, Huawei Cloud, … 25 of them). They publish no official list, so their currently-announced prefixes are taken from their ASNs.
 3. **The `hosting` catch-all**. You can never finish enumerating hosts one by one, so this tier flips the approach: keyword-match **every AS name in the global BGP table** (HOSTING / VPS / CLOUD / SERVER / DATACENTER / IDC…) and pull in the two-thousand-plus ASNs that literally call themselves hosts. The big clouds' backbone ASes (AS16509 AMAZON-02, AS13335 CLOUDFLARENET, …) are explicitly included here too — official lists only cover "ranges we serve traffic from", and this tier catches the famous misses like `1.1.1.1` and `8.8.8.8`.
 
 Tiers 2 and 3 share one download: the full BGP table from [iptoasn.com](https://iptoasn.com/) (a 6.8 MB file, updated daily, sourced from RouteViews) — no per-ASN API calls.
@@ -111,7 +111,7 @@ These publish no official file, so their announced prefixes are taken from their
 | Provider | ASN |
 |----------|-----|
 | Hetzner | 24940, 213230, 212317 |
-| OVH | 16276 |
+| OVH (incl. Kimsufi / SoYouStart brands) | 16276 |
 | Contabo | 51167 |
 | Leaseweb | 60781, 30633, 7203, 19148, 396190 |
 | G-Core | 199524 |
@@ -122,6 +122,19 @@ These publish no official file, so their announced prefixes are taken from their
 | HostHatch | 63473 |
 | Alibaba Cloud | 45102, 37963 |
 | Tencent Cloud | 132203, 45090 |
+| Huawei Cloud | 136907, 55990 |
+| Akamai (incl. the former Linode backbone) | 20940, 16625, 63949 |
+| Rackspace | 27357, 33070, 12200, 19994 |
+| GoDaddy | 26496 |
+| Namecheap | 22612 |
+| M247 | 9009 |
+| Selectel | 49505 |
+| Sakura Internet | 9370, 7684 |
+| Fly.io | 40509 |
+| DataCamp / CDN77 | 60068 |
+| Kamatera | 36007 |
+| Aeza | 210644 |
+| Timeweb | 9123 |
 
 Mind the semantic difference: an ASN gives you *every prefix that AS announces* — coarser than an official service list, and it can include a provider's own or bring-your-own (BYOIP) ranges. For "is this a datacenter IP", erring on the broad side is fine.
 
@@ -133,7 +146,7 @@ The big clouds' backbone ASes carry no keyword (there's nothing in "AMAZON-02"),
 
 This tier is heuristic and lower-confidence than the other two: a few false positives (small ISPs with VPS/CLOUD in their names — 3 suspicious out of 2,452 ASNs measured), and false negatives (hosts named after their founder). Skip it by leaving `hosting` out of `--providers`.
 
-One full crawl, measured July 2026: **157,667 ranges (42,976 of them IPv6), 25 MB, ~25 seconds.** Azure alone is 59k of them, and its source lists tens of thousands of duplicate CIDRs — the same network tagged under several services and regions — deduplicated on `(provider, cidr)`. Zscaler is the same story: the same node range recurs across dozens of cities and several clouds. ASN-route counts look small (Hetzner is ~130 rows) because iptoasn aggregates adjacent same-ASN ranges — the address coverage is unchanged. IPv6 coverage varies by provider (see the table in the Chinese README for exact counts); the only complete gap is Oracle, whose official file ships no v6 at all.
+One full crawl, measured July 2026: **181,589 ranges (56,011 of them IPv6), 29 MB, ~27 seconds.** Azure alone is 59k of them, and its source lists tens of thousands of duplicate CIDRs — the same network tagged under several services and regions — deduplicated on `(provider, cidr)`. Zscaler is the same story: the same node range recurs across dozens of cities and several clouds. ASN-route counts look small (Hetzner is ~130 rows) because iptoasn aggregates adjacent same-ASN ranges — the address coverage is unchanged. IPv6 coverage varies by provider (see the table in the Chinese README for exact counts); the only complete gap is Oracle, whose official file ships no v6 at all.
 
 Upstream data can't be trusted blindly: Vultr's geofeed ships three RFC 5737 test networks (`192.0.2.0/24` and friends). Special-purpose ranges (private, TEST-NET, multicast, …) are dropped before they reach the database.
 
@@ -178,7 +191,7 @@ PRs welcome, especially the first two:
 
 - [x] ~~IPv6~~ — both v4 and v6 are collected; Oracle (no v6 in its official file) is the only gap.
 - [ ] **Tune the hosting keywords** — false positive/negative reports welcome as issues; the keywords and explicit include list live in `iptoasn.go`, one-line changes.
-- [ ] **More named hosts** — append a line in `asn.go` (Huawei Cloud, Kimsufi, RackNerd, …), verify the holder, send a PR.
+- [ ] **More named hosts** — append a line in `asn.go`, verify the holder, send a PR. Mind that some brands have no ASN of their own: Kimsufi / SoYouStart are OVH brands (same ASNs), and RackNerd's IPs are announced by ColoCrossing (AS36352, already covered by the hosting tier) — they can't get their own label.
 - [x] ~~MMDB export~~ — the `export` subcommand; the daily Release ships `cloud-ip.mmdb.gz`.
 - [ ] JSON export.
 

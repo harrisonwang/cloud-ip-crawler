@@ -47,8 +47,8 @@ jobs:
           # 空库或明显缩水都视为上游异常，不发布
           rows=$(sqlite3 cloud-ip.db "SELECT COUNT(*) FROM cloud_ip_ranges;")
           echo "总计 $rows 条"
-          if [ "$rows" -lt 110000 ]; then
-            echo "::error::只有 $rows 条，远低于常态（约 15.5 万），疑似上游数据异常，中止发布"
+          if [ "$rows" -lt 130000 ]; then
+            echo "::error::只有 $rows 条，远低于常态（约 18 万），疑似上游数据异常，中止发布"
             exit 1
           fi
 

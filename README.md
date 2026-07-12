@@ -15,7 +15,7 @@ English: [README.en.md](README.en.md)
 数据分三层，置信度从高到低：
 
 1. **官方文件**（AWS、GCP、Azure、Cloudflare、Fastly 等 11 家）。各家自己发布的服务网段清单，最准，但格式各不相同：AWS 给 JSON，DigitalOcean 给 CSV，Linode 和 Vultr 用 [Geofeed](https://www.rfc-editor.org/rfc/rfc8805.html)，Bunny CDN 干脆给一串单个 IP，Azure 则藏在一个每周换网址的下载页后面。
-2. **命名 ASN**（Hetzner、OVH、Contabo、Leaseweb、阿里云、腾讯云 等 12 家）。它们不发官方清单，改从各自的 ASN 取「当前对外宣告的前缀」。
+2. **命名 ASN**（Hetzner、OVH、Contabo、Akamai、Rackspace、阿里云、腾讯云、华为云 等 25 家）。它们不发官方清单，改从各自的 ASN 取「当前对外宣告的前缀」。
 3. **hosting 兜底层**。一家一家列举托管商永远列不完，这层换思路：对全球 BGP 表里**每个 ASN 的名称**做关键词匹配（HOSTING / VPS / CLOUD / SERVER / DATACENTER / IDC…），把两千多个「名字里就写着自己是托管商」的 ASN 一次性收进来。大厂骨干 AS（AS16509 AMAZON-02、AS13335 CLOUDFLARENET 等）也在这层显式收录——官方清单只列「对外服务的网段」，`1.1.1.1`、`8.8.8.8` 这类著名漏网之鱼就靠这层兜住。
 
 第 2、3 层共用 [iptoasn.com](https://iptoasn.com/) 的全量 BGP 表（一个 6.8 MB 的文件，每日更新，源头是 RouteViews），一次下载覆盖全部，不用逐 ASN 打接口。
@@ -123,7 +123,7 @@ cloud-ip-crawler --providers=aws,gcp,azure,cloudflare,oracle,digitalocean,linode
 | 厂商 | ASN |
 |------|-----|
 | Hetzner | 24940, 213230, 212317 |
-| OVH | 16276 |
+| OVH（含 Kimsufi / SoYouStart 品牌） | 16276 |
 | Contabo | 51167 |
 | Leaseweb | 60781, 30633, 7203, 19148, 396190 |
 | G-Core | 199524 |
@@ -134,6 +134,19 @@ cloud-ip-crawler --providers=aws,gcp,azure,cloudflare,oracle,digitalocean,linode
 | HostHatch | 63473 |
 | 阿里云 | 45102, 37963 |
 | 腾讯云 | 132203, 45090 |
+| 华为云 | 136907, 55990 |
+| Akamai（含原 Linode 骨干） | 20940, 16625, 63949 |
+| Rackspace | 27357, 33070, 12200, 19994 |
+| GoDaddy | 26496 |
+| Namecheap | 22612 |
+| M247 | 9009 |
+| Selectel | 49505 |
+| Sakura Internet | 9370, 7684 |
+| Fly.io | 40509 |
+| DataCamp / CDN77 | 60068 |
+| Kamatera | 36007 |
+| Aeza | 210644 |
+| Timeweb | 9123 |
 
 留意语义差别：ASN 拿到的是「该 AS 宣告的所有前缀」，比官方服务清单**粗**——可能含厂商自用甚至客户自带（BYOIP）网段。对「判断是不是机房 IP」这个目标，宁可全一点反而合适。
 
@@ -149,32 +162,45 @@ cloud-ip-crawler --providers=aws,gcp,azure,cloudflare,oracle,digitalocean,linode
 
 ```
                  v4     v6
-hosting       48200  21938
+hosting       47632  21801
 azure         43310  16067
+akamai         6365  12372
 aws            7750   2899
 linode         5313     98
-alibaba        1127    281
+m247           2584    400
+alibaba        1127    280
 digitalocean   1078    148
 leaseweb        636    555
 oracle         1089      0
 gcp             991     48
 bunny           623    355
-ovh             846     69
+ovh             847     69
 tencent         827     85
 softlayer       733     72
 zscaler         572    105
-vultr           436     73
-gcore           437     53
+selectel        550     20
+huawei          415    113
+gcore           445     53
+vultr           436     71
+timeweb         354     84
+godaddy         323     17
+rackspace       252      4
 contabo         250      2
+datacamp        184     33
+aeza            177     38
 netcup          129     12
 hetzner         126      7
 scaleway         84     27
+kamatera         81     18
+namecheap        52     34
 hosthatch        75     12
 buyvm            25     61
+sakura           75      3
+flyio            34     39
 cloudflare       15      7
 fastly           19      2
 ──────────────────────────
-共 157667 条（其中 v6 42976），25 MB，全量抓一次约 25 秒
+共 181589 条（其中 v6 56011），29 MB，全量抓一次约 27 秒
 ```
 
 Azure 的原始数据里有三万多条重复网段（同一个 CIDR 挂在好几个 service / region 标签下），入库时按 `(provider, cidr)` 去重，只留一条。Zscaler 也一样——同一个节点网段会在几十个城市、几个 cloud 下反复出现，抓到的 3282 条去重后只剩 572 条。ASN 路线的条数看起来比别处少（Hetzner 只有 126 条），是因为 iptoasn 把相邻的同 ASN 网段聚合过，覆盖的地址总量不变。
@@ -237,7 +263,7 @@ print(row)   # ('aws', '52.94.76.0/22')
 
 - [x] ~~支持 IPv6~~：v4 / v6 都收，Oracle（官方文件没有 v6）是唯一的空缺。
 - [ ] **打磨 hosting 关键词**：误报 / 漏报清单欢迎提 issue，关键词和显式收录 / 排除清单都在 `iptoasn.go`，改一行的事。
-- [ ] **更多命名厂商**：往 `asn.go` 的清单里加一行就行（华为云、Kimsufi、RackNerd 等），核对 holder 后提 PR。
+- [ ] **更多命名厂商**：往 `asn.go` 的清单里加一行就行，核对 holder 后提 PR。注意有些牌子没有自有 ASN：Kimsufi / SoYouStart 是 OVH 品牌（同一批 ASN），RackNerd 的 IP 挂在 ColoCrossing（AS36352）名下宣告，hosting 层已覆盖，无法单独打标签。
 - [x] ~~导出成 MMDB~~：`export` 子命令，每日 Release 里有现成的 `cloud-ip.mmdb.gz`。
 - [ ] 导出成 JSON。
 

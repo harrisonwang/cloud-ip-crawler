@@ -47,7 +47,8 @@ func TestIsHostingDesc(t *testing.T) {
 		"CLOUDFLARENET",
 		"XYZ DEDICATED SERVERS",
 		"FOO COLOCATION GMBH",
-		"CHINANET-IDC-BJ", // IDC 作为独立 token
+		"CHINANET-IDC-BJ",            // IDC 作为独立 token
+		"PULSEHEBERG-AS PulseHeberg", // 法语系托管商
 		"ACME DATA CENTER SOLUTIONS",
 	}
 	for _, d := range positive {
@@ -57,7 +58,8 @@ func TestIsHostingDesc(t *testing.T) {
 	}
 
 	// 误伤防线：SERVICES 不含 SERVER，COLOMBIA 不含 COLOC，
-	// MIDCONTINENT 含 IDC 但不是独立 token（家宽 ISP，绝不能进来）
+	// MIDCONTINENT 含 IDC 但不是独立 token（家宽 ISP，绝不能进来）。
+	// 最后一条是否决 SERVIDOR 关键词的原因：葡语里 Servidores 也指公务员。
 	negative := []string{
 		"COMCAST-7922 - Comcast Cable",
 		"COLOMBIA-TELECOM",
@@ -65,6 +67,7 @@ func TestIsHostingDesc(t *testing.T) {
 		"CHINANET-BACKBONE",
 		"VODAFONE-BROADBAND",
 		"MIDCONTINENT-COMMUNICATIONS",
+		"Caixa de Assistencia dos Servidores do Estado",
 	}
 	for _, d := range negative {
 		if isHostingDesc(d) {

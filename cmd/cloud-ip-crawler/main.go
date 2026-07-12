@@ -29,8 +29,15 @@ func main() {
 		}
 	}
 
+	// ASN 系厂商清单在 asn.go 里维护，帮助文本动态生成，加厂商不用改这里
+	asnCrawlers := crawler.ASNCrawlers()
+	asnNames := make([]string, 0, len(asnCrawlers))
+	for _, c := range asnCrawlers {
+		asnNames = append(asnNames, c.Name())
+	}
+
 	dbPath := flag.String("db", "cloud-ip.db", "SQLite 数据库路径（不存在则自动创建）")
-	providers := flag.String("providers", "all", "要爬取的云厂商，逗号分隔，或 all。发官方文件的：aws,gcp,azure,cloudflare,oracle,digitalocean,linode,vultr,fastly,bunny,zscaler；走 ASN 的：hetzner,ovh,contabo,leaseweb,gcore,scaleway,netcup,softlayer,buyvm,hosthatch,alibaba,tencent；启发式兜底层：hosting")
+	providers := flag.String("providers", "all", "要爬取的云厂商，逗号分隔，或 all。发官方文件的：aws,gcp,azure,cloudflare,oracle,digitalocean,linode,vultr,fastly,bunny,zscaler；走 ASN 的："+strings.Join(asnNames, ",")+"；启发式兜底层：hosting")
 	dryRun := flag.Bool("dry-run", false, "仅抓取并打印样例，不写数据库")
 	showVersion := flag.Bool("version", false, "打印版本后退出")
 	flag.Parse()
@@ -58,7 +65,7 @@ func main() {
 	order := []string{"aws", "gcp", "azure", "cloudflare", "oracle", "digitalocean", "linode", "vultr", "fastly", "bunny", "zscaler"}
 
 	// 大机房 / VPS 商家大多不发官方文件，改从 ASN 取宣告前缀（iptoasn 全量表），每家一个爬虫
-	for _, c := range crawler.ASNCrawlers() {
+	for _, c := range asnCrawlers {
 		crawlers[c.Name()] = c
 		order = append(order, c.Name())
 	}

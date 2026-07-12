@@ -15,7 +15,7 @@ var asnProviderList = []struct {
 	asns []int
 }{
 	{"hetzner", []int{24940, 213230, 212317}},
-	{"ovh", []int{16276}},
+	{"ovh", []int{16276}}, // Kimsufi / SoYouStart 是 OVH 品牌，同一批 ASN
 	{"contabo", []int{51167}},
 	{"leaseweb", []int{60781, 30633, 7203, 19148, 396190}},
 	{"gcore", []int{199524}},
@@ -26,6 +26,19 @@ var asnProviderList = []struct {
 	{"hosthatch", []int{63473}},
 	{"alibaba", []int{45102, 37963}},
 	{"tencent", []int{132203, 45090}},
+	{"huawei", []int{136907, 55990}},
+	{"akamai", []int{20940, 16625, 63949}}, // 63949 = Akamai Connected Cloud（原 Linode 骨干）
+	{"rackspace", []int{27357, 33070, 12200, 19994}},
+	{"godaddy", []int{26496}},
+	{"namecheap", []int{22612}},
+	{"m247", []int{9009}},
+	{"selectel", []int{49505}},
+	{"sakura", []int{9370, 7684}},
+	{"flyio", []int{40509}},
+	{"datacamp", []int{60068}}, // CDN77
+	{"kamatera", []int{36007}},
+	{"aeza", []int{210644}},
+	{"timeweb", []int{9123}},
 }
 
 // ASNCrawlers 返回全部基于 ASN 的命名厂商爬虫，供 main 注册。
