@@ -21,9 +21,14 @@ import (
 )
 
 func main() {
-	// lookup 子命令：查一个 IP 属于谁，不走抓取流程
-	if len(os.Args) > 1 && os.Args[1] == "lookup" {
-		os.Exit(runLookup(os.Args[2:]))
+	// 子命令：lookup 查归属，export 导出 MMDB，都不走抓取流程
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "lookup":
+			os.Exit(runLookup(os.Args[2:]))
+		case "export":
+			os.Exit(runExport(os.Args[2:]))
+		}
 	}
 
 	dbPath := flag.String("db", "cloud-ip.db", "SQLite 数据库路径（不存在则自动创建）")
@@ -220,5 +225,42 @@ func runLookup(args []string) int {
 		fmt.Println("未命中：不在已收录的清单里（注意：不等于它不是机房 IP）")
 		return 1
 	}
+	return 0
+}
+
+// runExport 实现 `cloud-ip-crawler export`：把 SQLite 导出成 MMDB，
+// nginx（geoip2 模块）、HAProxy 等可以直接加载。
+func runExport(args []string) int {
+	fs := flag.NewFlagSet("export", flag.ExitOnError)
+	dbPath := fs.String("db", "cloud-ip.db", "SQLite 数据库路径")
+	outPath := fs.String("out", "cloud-ip.mmdb", "输出的 MMDB 文件路径")
+	fs.Parse(args) //nolint:errcheck // ExitOnError 模式下错误直接退出
+
+	if _, err := os.Stat(*dbPath); err != nil {
+		fmt.Fprintf(os.Stderr, "数据库 %s 不存在：先运行抓取，或从 Release 下载现成数据集\n", *dbPath)
+		return 2
+	}
+
+	db, err := sql.Open("sqlite", *dbPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "无法打开数据库: %v\n", err)
+		return 2
+	}
+	defer db.Close()
+
+	f, err := os.Create(*outPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "无法创建输出文件: %v\n", err)
+		return 2
+	}
+	defer f.Close()
+
+	n, err := crawler.ExportMMDB(db, f)
+	if err != nil {
+		os.Remove(*outPath) //nolint:errcheck // 尽力清掉半成品
+		fmt.Fprintf(os.Stderr, "导出失败: %v\n", err)
+		return 2
+	}
+	log.Printf("已导出 %d 个网段到 %s", n, *outPath)
 	return 0
 }

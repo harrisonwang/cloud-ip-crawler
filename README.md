@@ -24,11 +24,24 @@ English: [README.en.md](README.en.md)
 
 ## 快速开始
 
-不想自己跑，直接下载每天自动构建的数据库：
+不想自己跑，直接下载每天自动构建的数据库（SQLite / CSV / MMDB 三种格式）：
 
 ```bash
 curl -LO https://github.com/harrisonwang/cloud-ip-crawler/releases/download/dataset-latest/cloud-ip.db.gz
 gunzip cloud-ip.db.gz
+
+# nginx / HAProxy 用户直接拿 MMDB
+curl -LO https://github.com/harrisonwang/cloud-ip-crawler/releases/download/dataset-latest/cloud-ip.mmdb.gz
+gunzip cloud-ip.mmdb.gz
+```
+
+MMDB 配 nginx 的 [geoip2 模块](https://github.com/leev/ngx_http_geoip2_module)，三行就能拿到判定结果：
+
+```nginx
+geoip2 /etc/nginx/cloud-ip.mmdb {
+    $cloud_provider provider;   # 非空即机房 IP，值形如 aws / hetzner / hosting
+    $cloud_tier     tier;       # official / asn / hosting，置信度从高到低
+}
 ```
 
 自己跑：
@@ -58,12 +71,15 @@ hosting  52.94.72.0/21  region=US  service=AS16509 AMAZON-02
 ```
 cloud-ip-crawler [flags]           抓取数据
 cloud-ip-crawler lookup <ip>       查询一个 IP 的归属
+cloud-ip-crawler export [flags]    导出 MMDB（--out cloud-ip.mmdb）
 
   --db string          SQLite 文件路径（默认 cloud-ip.db，抓取时不存在则自动创建）
   --providers string   逗号分隔的厂商，或 all（默认 all）
   --dry-run            只抓取并打印样例，不写数据库
   --version            打印版本
 ```
+
+MMDB 每个 IP 只存置信度最高的一条归属（official > asn > hosting，`tier` 字段标明来源层）；要看全部归属用 SQLite + `lookup`。
 
 ```bash
 # 只更新 AWS 和 GCP，其它厂商的数据原样保留
@@ -134,14 +150,16 @@ cloud-ip-crawler --providers=aws,gcp,azure,cloudflare,oracle,digitalocean,linode
 ```
 hosting 48177 │ azure 43310 │ aws 7750 │ linode 5313 │ alibaba 1127
 oracle 1089 │ digitalocean 1078 │ gcp 991 │ ovh 846 │ tencent 827
-softlayer 733 │ leaseweb 636 │ bunny 623 │ zscaler 572 │ vultr 439
+softlayer 733 │ leaseweb 636 │ bunny 623 │ zscaler 572 │ vultr 436
 gcore 344 │ contabo 250 │ netcup 129 │ hetzner 126 │ scaleway 84
 hosthatch 75 │ buyvm 25 │ fastly 19 │ cloudflare 15
 ────────────────────────────────────────────────────
-共 114578 条，16 MB，全量抓一次约 30 秒
+共 114575 条，16 MB，全量抓一次约 30 秒
 ```
 
 Azure 的原始数据里有三万多条重复网段（同一个 CIDR 挂在好几个 service / region 标签下），入库时按 `(provider, cidr)` 去重，只留一条。Zscaler 也一样——同一个节点网段会在几十个城市、几个 cloud 下反复出现，抓到的 3282 条去重后只剩 572 条。ASN 路线的条数看起来比别处少（Hetzner 只有 126 条），是因为 iptoasn 把相邻的同 ASN 网段聚合过，覆盖的地址总量不变。
+
+上游数据不能全信：Vultr 的 geofeed 里混着三个 RFC 5737 测试网段（`192.0.2.0/24` 等）。特殊用途网段（私网、TEST-NET、组播……）在入库前统一丢弃。
 
 ## 数据表和查询
 
@@ -200,7 +218,8 @@ print(row)   # ('aws', '52.94.76.0/22')
 - [ ] **支持 IPv6**：官方文件这边，给各家逐个核对 v6 字段后放开 `internal/crawler` 里 `createRange` 跳过 v6 的那一行（好几家的解析器其实已经在读 v6，只是被统一拦下）；ASN 这边，iptoasn 有现成的 `ip2asn-v6.tsv.gz`，再放开 `rangeToCIDRs` 的 v4 限制即可。
 - [ ] **打磨 hosting 关键词**：误报 / 漏报清单欢迎提 issue，关键词和显式收录 / 排除清单都在 `iptoasn.go`，改一行的事。
 - [ ] **更多命名厂商**：往 `asn.go` 的清单里加一行就行（华为云、Kimsufi、RackNerd 等），核对 holder 后提 PR。
-- [ ] 导出成 JSON / MMDB（nginx / HAProxy 那边可以直接吃 MMDB）。
+- [x] ~~导出成 MMDB~~：`export` 子命令，每日 Release 里有现成的 `cloud-ip.mmdb.gz`。
+- [ ] 导出成 JSON。
 
 ## 它的来历
 

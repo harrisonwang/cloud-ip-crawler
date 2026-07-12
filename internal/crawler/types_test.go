@@ -38,6 +38,12 @@ func TestCreateRangeSkipsIPv6(t *testing.T) {
 	if _, err := createRange("cloudflare", "2606:4700::/32", "", "cdn"); !errors.Is(err, errSkipIPv6) {
 		t.Errorf("IPv6 CIDR 应返回 errSkipIPv6，实际: %v", err)
 	}
+	// Vultr 的 geofeed 真把 TEST-NET 当数据发过，特殊用途网段必须在入库前被丢弃
+	for _, cidr := range []string{"192.0.2.0/24", "198.51.100.0/24", "10.0.0.0/8", "192.0.2.128/25"} {
+		if _, err := createRange("vultr", cidr, "", ""); !errors.Is(err, errSkipReserved) {
+			t.Errorf("保留网段 %s 应返回 errSkipReserved，实际: %v", cidr, err)
+		}
+	}
 	r, err := createRange("aws", "52.94.76.0/22", "us-east-1", "EC2")
 	if err != nil {
 		t.Fatalf("IPv4 CIDR 不应报错: %v", err)

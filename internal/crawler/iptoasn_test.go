@@ -71,13 +71,15 @@ func TestParseIPToASN(t *testing.T) {
 		// 命名厂商（hetzner AS24940）
 		"5.9.0.0\t5.9.255.255\t24940\tDE\tHETZNER-AS Hetzner Online GmbH",
 		// 关键词命中 → hosting
-		"192.0.2.0\t192.0.2.255\t65001\tUS\tEXAMPLE-HOSTING Ltd",
+		"185.199.108.0\t185.199.108.255\t65001\tUS\tEXAMPLE-HOSTING Ltd",
 		// 显式清单命中（Cloudflare 骨干 AS）→ hosting
 		"1.1.1.0\t1.1.1.255\t13335\tUS\tCLOUDFLARENET",
 		// 无关 ASN，跳过
-		"198.51.100.0\t198.51.100.255\t65002\tUS\tSOME-TELECOM",
+		"9.9.9.0\t9.9.9.255\t65002\tUS\tSOME-TELECOM",
 		// AS0（未宣告空洞），跳过
-		"203.0.113.0\t203.0.113.255\t0\tNone\tNot routed",
+		"23.128.0.0\t23.128.0.255\t0\tNone\tNot routed",
+		// 保留网段（TEST-NET）：就算 ASN 名字像托管商也必须被 createRange 丢弃
+		"192.0.2.0\t192.0.2.255\t65003\tUS\tBOGON-HOSTING Ltd",
 	}, "\n")
 
 	ds, err := parseIPToASN(strings.NewReader(tsv))

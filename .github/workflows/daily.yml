@@ -17,7 +17,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
+          go-version: '1.24'
           cache: true
 
       - name: 构建
@@ -52,9 +52,12 @@ jobs:
             exit 1
           fi
 
+          ./cloud-ip-crawler export --db cloud-ip.db --out cloud-ip.mmdb
+
           gzip -9 -f cloud-ip.csv
+          gzip -9 -f cloud-ip.mmdb
           gzip -9 -kf cloud-ip.db
-          sha256sum cloud-ip.db.gz cloud-ip.csv.gz > SHA256SUMS
+          sha256sum cloud-ip.db.gz cloud-ip.csv.gz cloud-ip.mmdb.gz > SHA256SUMS
 
       - name: 发布到滚动 Release
         env:
@@ -63,8 +66,8 @@ jobs:
           notes="主流云厂商、大机房和两千多家托管商的 IP 段，构建于 $(date -u '+%Y-%m-%d %H:%M UTC')。仅 IPv4。"
           if gh release view dataset-latest >/dev/null 2>&1; then
             gh release edit dataset-latest --notes "$notes"
-            gh release upload dataset-latest cloud-ip.db.gz cloud-ip.csv.gz SHA256SUMS --clobber
+            gh release upload dataset-latest cloud-ip.db.gz cloud-ip.csv.gz cloud-ip.mmdb.gz SHA256SUMS --clobber
           else
-            gh release create dataset-latest cloud-ip.db.gz cloud-ip.csv.gz SHA256SUMS \
+            gh release create dataset-latest cloud-ip.db.gz cloud-ip.csv.gz cloud-ip.mmdb.gz SHA256SUMS \
               --title "云厂商 IP 段数据集（每日更新）" --notes "$notes"
           fi

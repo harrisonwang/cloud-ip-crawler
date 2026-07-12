@@ -8,6 +8,7 @@ import (
 	"io"
 	"math/bits"
 	"net/netip"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -204,10 +205,8 @@ func isHostingDesc(desc string) bool {
 		return (r < 'A' || r > 'Z') && (r < '0' || r > '9')
 	})
 	for _, tok := range tokens {
-		for _, kw := range hostingKeywordTokens {
-			if tok == kw {
-				return true
-			}
+		if slices.Contains(hostingKeywordTokens, tok) {
+			return true
 		}
 	}
 	return false

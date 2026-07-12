@@ -23,11 +23,24 @@ Pure Go, no CGO, one binary, and you end up with a 16 MB SQLite file.
 
 ## Quick start
 
-Download the dataset that gets rebuilt daily:
+Download the dataset that gets rebuilt daily (SQLite / CSV / MMDB):
 
 ```bash
 curl -LO https://github.com/harrisonwang/cloud-ip-crawler/releases/download/dataset-latest/cloud-ip.db.gz
 gunzip cloud-ip.db.gz
+
+# nginx / HAProxy users: take the MMDB
+curl -LO https://github.com/harrisonwang/cloud-ip-crawler/releases/download/dataset-latest/cloud-ip.mmdb.gz
+gunzip cloud-ip.mmdb.gz
+```
+
+With nginx's [geoip2 module](https://github.com/leev/ngx_http_geoip2_module), three lines get you the verdict:
+
+```nginx
+geoip2 /etc/nginx/cloud-ip.mmdb {
+    $cloud_provider provider;   # non-empty = datacenter IP; values like aws / hetzner / hosting
+    $cloud_tier     tier;       # official / asn / hosting, highest confidence first
+}
 ```
 
 Or run it yourself:
@@ -57,12 +70,15 @@ Exit code 0 on a hit, 1 on a miss — usable directly in scripts. One IP may lis
 ```
 cloud-ip-crawler [flags]           crawl
 cloud-ip-crawler lookup <ip>       look up one IP
+cloud-ip-crawler export [flags]    export MMDB (--out cloud-ip.mmdb)
 
   --db string          SQLite path (default cloud-ip.db, created on crawl if missing)
   --providers string   Comma-separated providers, or all (default all)
   --dry-run            Fetch and print samples, don't write
   --version            Print version
 ```
+
+The MMDB keeps only the highest-confidence attribution per IP (official > asn > hosting; the `tier` field says which layer answered); for all attributions use SQLite + `lookup`.
 
 Each provider is replaced wholesale inside one transaction — delete, then insert — so ranges a provider has withdrawn don't linger.
 
@@ -117,7 +133,9 @@ The big clouds' backbone ASes carry no keyword (there's nothing in "AMAZON-02"),
 
 This tier is heuristic and lower-confidence than the other two: a few false positives (small ISPs with VPS/CLOUD in their names — 3 suspicious out of 2,452 ASNs measured), and false negatives (hosts named after their founder). Skip it by leaving `hosting` out of `--providers`.
 
-One full crawl, measured July 2026: **114,578 ranges, 16 MB, ~30 seconds.** Azure alone is 43,310 of them, and its source lists about 35k duplicate CIDRs — the same network tagged under several services and regions — deduplicated on `(provider, cidr)`. Zscaler is the same story: the same node range recurs across dozens of cities and several clouds, so its 3,282 fetched rows collapse to 572. ASN-route counts look small (Hetzner is just 126 rows) because iptoasn aggregates adjacent same-ASN ranges — the address coverage is unchanged.
+One full crawl, measured July 2026: **114,575 ranges, 16 MB, ~30 seconds.** Azure alone is 43,310 of them, and its source lists about 35k duplicate CIDRs — the same network tagged under several services and regions — deduplicated on `(provider, cidr)`. Zscaler is the same story: the same node range recurs across dozens of cities and several clouds, so its 3,282 fetched rows collapse to 572. ASN-route counts look small (Hetzner is just 126 rows) because iptoasn aggregates adjacent same-ASN ranges — the address coverage is unchanged.
+
+Upstream data can't be trusted blindly: Vultr's geofeed ships three RFC 5737 test networks (`192.0.2.0/24` and friends). Special-purpose ranges (private, TEST-NET, multicast, …) are dropped before they reach the database.
 
 ## Schema and lookups
 
@@ -161,7 +179,8 @@ PRs welcome, especially the first two:
 - [ ] **IPv6** — audit each official source's v6 fields and lift the skip in `createRange` (several parsers already read v6; it's centrally dropped). For the ASN route, iptoasn ships `ip2asn-v6.tsv.gz` ready to go — just lift the v4 restriction in `rangeToCIDRs`.
 - [ ] **Tune the hosting keywords** — false positive/negative reports welcome as issues; the keywords and explicit include list live in `iptoasn.go`, one-line changes.
 - [ ] **More named hosts** — append a line in `asn.go` (Huawei Cloud, Kimsufi, RackNerd, …), verify the holder, send a PR.
-- [ ] JSON / MMDB export (nginx / HAProxy can consume MMDB directly).
+- [x] ~~MMDB export~~ — the `export` subcommand; the daily Release ships `cloud-ip.mmdb.gz`.
+- [ ] JSON export.
 
 ## Where it came from
 
