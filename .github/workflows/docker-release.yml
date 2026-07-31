@@ -1,0 +1,73 @@
+# 构建 cloud-ip-crawler 镜像，同时推送 GHCR 与阿里云 ACR（个人版）。
+# 触发：打 v* 标签（推 语义版本号+latest），或手动 dispatch（只推 latest）。
+# ACR Secrets 同 detect-radar 仓库：ACR_REGISTRY / ACR_NAMESPACE / ACR_USERNAME / ACR_PASSWORD，
+# 不配则只推 GHCR。
+name: docker-release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+env:
+  ACR_REGISTRY: ${{ secrets.ACR_REGISTRY }}
+  ACR_NAMESPACE: ${{ secrets.ACR_NAMESPACE }}
+
+jobs:
+  build-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - name: 登录 GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 登录阿里云 ACR
+        if: env.ACR_REGISTRY != ''
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.ACR_REGISTRY }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: 计算标签
+        id: meta
+        run: |
+          VERSION=latest
+          case "$GITHUB_REF" in
+            refs/tags/v*) VERSION="${GITHUB_REF#refs/tags/v}" ;;
+          esac
+          TAGS="ghcr.io/${GITHUB_REPOSITORY_OWNER}/cloud-ip-crawler:${VERSION}"
+          if [ "$VERSION" != latest ]; then
+            TAGS="$TAGS,ghcr.io/${GITHUB_REPOSITORY_OWNER}/cloud-ip-crawler:latest"
+          fi
+          if [ -n "$ACR_REGISTRY" ]; then
+            BASE="${ACR_REGISTRY}/${ACR_NAMESPACE}/cloud-ip-crawler"
+            TAGS="$TAGS,${BASE}:${VERSION}"
+            if [ "$VERSION" != latest ]; then
+              TAGS="$TAGS,${BASE}:latest"
+            fi
+          fi
+          echo "tags=$TAGS" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: 构建并推送
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
