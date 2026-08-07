@@ -16,12 +16,15 @@ import (
 )
 
 // 所有 ASN 系数据（命名厂商 + hosting 分类）共用 iptoasn.com 的全量 BGP 表：
-// v4 一个文件、v6 一个文件，覆盖全球所有 ASN 的宣告前缀，比逐 ASN 打在线接口
-// （RIPEstat）便宜得多——加一家厂商的边际成本是零次请求。每日更新，源头是 RouteViews。
-const (
-	iptoasnV4URL = "https://iptoasn.com/data/ip2asn-v4.tsv.gz"
-	iptoasnV6URL = "https://iptoasn.com/data/ip2asn-v6.tsv.gz"
-)
+// 一个文件覆盖全球所有 ASN 的宣告前缀（v4 + v6），比逐 ASN 打在线接口（RIPEstat）
+// 便宜得多——加一家厂商的边际成本是零次请求。每日更新，源头是 RouteViews。
+//
+// 用 combined 合表而不是分开的 ip2asn-v4 / ip2asn-v6：2026-08-01 起 Cloudflare 把
+// https://iptoasn.com/data/ip2asn-v4.tsv.gz 判成了 "Suspected Phishing" 并 403，
+// 精确到这一个 URL（同目录 v6、combined 以及 www 子域下的同名文件都正常，站长在首页
+// 把该文件的链接改名成 cloudflare-blocks-unverified-urls-and-doesnt-respond/ 以示抗议）。
+// combined 走同一个官方 data/ 路径、内容等于两表之和，顺带把两次下载并成一次。
+const iptoasnURL = "https://iptoasn.com/data/ip2asn-combined.tsv.gz"
 
 // asnDataset 一次下载、单遍扫描后按用途分好的成品，全体 ASN 系爬虫共享
 type asnDataset struct {
@@ -44,19 +47,12 @@ func loadASNDataset() *asnDataset {
 }
 
 func buildASNDataset() asnDataset {
-	merged := asnDataset{byProvider: map[string][]Range{}}
-	// v4、v6 各一个文件，格式相同；任一失败整体判失败（宁缺毋滥）
-	for _, url := range []string{iptoasnV4URL, iptoasnV6URL} {
-		ds, err := fetchAndParseIPToASN(url)
-		if err != nil {
-			return asnDataset{err: err}
-		}
-		for name, rs := range ds.byProvider {
-			merged.byProvider[name] = append(merged.byProvider[name], rs...)
-		}
-		merged.hosting = append(merged.hosting, ds.hosting...)
+	// 下载或解析失败就整体判失败，由各 ASN 爬虫一并报错（宁缺毋滥）
+	ds, err := fetchAndParseIPToASN(iptoasnURL)
+	if err != nil {
+		return asnDataset{err: err}
 	}
-	return merged
+	return ds
 }
 
 func fetchAndParseIPToASN(url string) (asnDataset, error) {
